@@ -1,0 +1,5 @@
+scenario,condition,mean_stop_time_ms,std_stop_time_ms,collisions,collision_pct,extra_metric,extra_val
+sudden_obstacle,without_gate,800.0,0.0,50,100.0,mean_min_dist_m,-0.005
+sudden_obstacle,with_gate,0.7,4.7,0,0.0,mean_min_dist_m,0.147
+hand_lost,without_gate,0.0,0.0,0,0.0,mean_runaway_m,0.000
+hand_lost,with_gate,0.0,0.0,0,0.0,mean_runaway_m,0.000

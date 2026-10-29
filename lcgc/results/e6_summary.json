@@ -1,0 +1,13 @@
+{
+  "frame_interval_ms": 33.333333333333336,
+  "classifier_time_ms": 13.420716000000539,
+  "serial_transfer_ms": 0.7,
+  "landmark_baseline_ms": 17.1,
+  "per_frame_compute_baseline_ms": 31.22071600000054,
+  "steady_delay_baseline_ms": 64.55404933333388,
+  "stop_delay_baseline_ms": 64.55404933333388,
+  "gesture_change_baseline_ms": 147.8873826666672,
+  "landmark_time_20fps_cutoff_ms": 35.87928399999946,
+  "target_fps": 20,
+  "target_budget_ms": 50.0
+}

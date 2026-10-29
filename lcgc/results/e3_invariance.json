@@ -1,0 +1,10 @@
+{
+  "scale_factor": 2.5,
+  "shift_vector": [
+    120.0,
+    -45.0
+  ],
+  "max_abs_difference": 1.021405182655144e-14,
+  "mean_abs_difference": 3.5632872314159786e-15,
+  "invariant": true
+}

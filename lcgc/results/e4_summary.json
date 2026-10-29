@@ -1,0 +1,34 @@
+{
+  "sudden_obstacle": {
+    "without_gate": {
+      "mean_time_to_stop_ms": 800.0,
+      "std_time_to_stop_ms": 0.0,
+      "collision_count": 50,
+      "collision_rate_pct": 100.0,
+      "mean_min_distance_m": -0.004545454545454519
+    },
+    "with_gate": {
+      "mean_time_to_stop_ms": 0.6666666666666665,
+      "std_time_to_stop_ms": 4.666666666666665,
+      "collision_count": 0,
+      "collision_rate_pct": 0.0,
+      "mean_min_distance_m": 0.14716666666666667
+    }
+  },
+  "hand_lost": {
+    "without_gate": {
+      "mean_time_to_stop_ms": 0.0,
+      "std_time_to_stop_ms": 0.0,
+      "collision_count": 0,
+      "collision_rate_pct": 0.0,
+      "mean_runaway_m": 0.0
+    },
+    "with_gate": {
+      "mean_time_to_stop_ms": 0.0,
+      "std_time_to_stop_ms": 0.0,
+      "collision_count": 0,
+      "collision_rate_pct": 0.0,
+      "mean_runaway_m": 0.0
+    }
+  }
+}

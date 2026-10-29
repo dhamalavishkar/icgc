@@ -1,0 +1,4 @@
+mode,accuracy_mean,accuracy_std,false_triggers_per_min_mean,false_triggers_per_min_std,command_flickers_mean,command_flickers_std,latency_ms_mean,latency_ms_std
+Raw Argmax,73.14,3.70,15.33,4.11,0.3,0.5,336.9,42.6
+EMA Only,71.21,4.04,15.00,3.70,0.8,0.9,399.6,67.2
+EMA + Hysteresis,68.33,3.62,10.17,2.23,2.4,1.1,437.0,65.0

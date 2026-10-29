@@ -1,0 +1,32 @@
+{
+  "Raw Argmax": {
+    "accuracy_mean": 73.13888888888889,
+    "accuracy_std": 3.699662146737185,
+    "false_triggers_per_min_mean": 15.333333333333334,
+    "false_triggers_per_min_std": 4.109609335312651,
+    "flickers_mean": 0.3333333333333333,
+    "flickers_std": 0.4714045207910317,
+    "latency_ms_mean": 336.87052054699114,
+    "latency_ms_std": 42.60240148654819
+  },
+  "EMA Only": {
+    "accuracy_mean": 71.21296296296298,
+    "accuracy_std": 4.041059413037405,
+    "false_triggers_per_min_mean": 15.0,
+    "false_triggers_per_min_std": 3.696845502136472,
+    "flickers_mean": 0.75,
+    "flickers_std": 0.924211375534118,
+    "latency_ms_mean": 399.5653719918426,
+    "latency_ms_std": 67.19655882179339
+  },
+  "EMA + Hysteresis": {
+    "accuracy_mean": 68.33333333333333,
+    "accuracy_std": 3.621495041753968,
+    "false_triggers_per_min_mean": 10.166666666666666,
+    "false_triggers_per_min_std": 2.229848026709942,
+    "flickers_mean": 2.4166666666666665,
+    "flickers_std": 1.114924013354971,
+    "latency_ms_mean": 436.9955752308694,
+    "latency_ms_std": 65.00751306404614
+  }
+}

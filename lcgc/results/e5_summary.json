@@ -1,0 +1,41 @@
+{
+  "P1 (Single-Frame Raw)": {
+    "successes": 11,
+    "total_trials": 100,
+    "success_rate": 0.11,
+    "wilson_ci_95": [
+      0.06254203482152312,
+      0.18631278079800626
+    ],
+    "mean_steps": 927.6363636363636,
+    "mean_time_sec": 30.921212121212122,
+    "total_collisions": 14061,
+    "mean_collisions_per_trial": 140.61
+  },
+  "P2 (LCGC No Gate)": {
+    "successes": 63,
+    "total_trials": 100,
+    "success_rate": 0.63,
+    "wilson_ci_95": [
+      0.5322054971700513,
+      0.7181762309567722
+    ],
+    "mean_steps": 944.7619047619048,
+    "mean_time_sec": 31.492063492063494,
+    "total_collisions": 1657,
+    "mean_collisions_per_trial": 16.57
+  },
+  "P3 (Full LCGC)": {
+    "successes": 63,
+    "total_trials": 100,
+    "success_rate": 0.63,
+    "wilson_ci_95": [
+      0.5322054971700513,
+      0.7181762309567722
+    ],
+    "mean_steps": 944.7619047619048,
+    "mean_time_sec": 31.492063492063494,
+    "total_collisions": 1657,
+    "mean_collisions_per_trial": 16.57
+  }
+}
