@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LCGC — Online Real-Time Gesture Control Simulation</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border-color: #334155;
+      --accent: #38bdf8;
+      --accent-green: #22c55e;
+      --accent-red: #ef4444;
+      --accent-yellow: #eab308;
+    }
+    body {
+      background-color: var(--bg);
+      color: #f8fafc;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .hud-card {
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-color);
+    }
+    .badge-pulse {
+      animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .5; }
+    }
+  </style>
+</head>
+<body class="p-4 min-h-screen text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
+
+  <!-- TOP HEADER -->
+  <header class="max-w-7xl mx-auto mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/60 pb-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-3 h-3 rounded-full bg-emerald-500 badge-pulse"></span>
+        <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white">
+          LCGC Online Simulation
+        </h1>
+        <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800 font-mono">
+          INT8 1D-CNN (26.8 KB)
+        </span>
+      </div>
+      <p class="text-xs text-slate-400 mt-0.5">
+        Lightweight Continuous Gesture Control for Differential-Drive Robot &bull; 15-frame sliding window @ 30 FPS &bull; Safety Gate
+      </p>
+    </div>
+
+    <!-- Backend status & quick toggles -->
+    <div class="flex items-center gap-2 text-xs">
+      <div id="connectionBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800 text-emerald-300">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span>Local Client Physics (30 FPS)</span>
+      </div>
+      <a href="lcgc_simulation_suite.zip" download="lcgc_simulation_suite.zip" class="px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-medium flex items-center gap-1.5 shadow transition">
+        <span>📥</span>
+        <span>Download ZIP</span>
+      </a>
+      <button id="btnReset" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 transition font-medium">
+        ↺ Reset Robot
+      </button>
+      <button id="btnPause" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 transition font-medium">
+        ⏸ Pause
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN SIMULATION GRID -->
+  <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+    <!-- LEFT / CENTER: ARENA & SKELETON (7 cols) -->
+    <div class="lg:col-span-7 flex flex-col gap-4">
+      
+      <!-- 2D ARENA CANVAS -->
+      <div class="hud-card rounded-xl p-4 shadow-xl relative overflow-hidden">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300">
+              2D Arena Simulation (4m &times; 4m)
+            </h2>
+            <span id="arenaGoalBadge" class="text-xs px-2 py-0.5 rounded bg-yellow-950/80 text-yellow-400 border border-yellow-800 font-mono">
+              Goal: (3.5, 3.5)
+            </span>
+          </div>
+          <div class="text-xs text-slate-400 font-mono" id="robotPoseDisplay">
+            x: 0.50m | y: 0.50m | &theta;: 0.0&deg;
+          </div>
+        </div>
+
+        <!-- Canvas Container -->
+        <div class="relative w-full aspect-square max-h-[500px] bg-slate-950 rounded-lg border border-slate-800 overflow-hidden flex items-center justify-center">
+          <canvas id="arenaCanvas" width="600" height="600" class="w-full h-full block cursor-crosshair"></canvas>
+          
+          <!-- Collision Overlay Banner -->
+          <div id="collisionAlert" class="hidden absolute top-3 inset-x-3 bg-red-950/90 border border-red-600 text-red-200 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between shadow-lg">
+            <span>⚠ OBSTACLE COLLISION DETECTED</span>
+            <span id="collisionCountText">Collisions: 0</span>
+          </div>
+
+          <!-- Safety Gate Overlay Banner -->
+          <div id="safetyGateAlert" class="hidden absolute bottom-3 inset-x-3 bg-amber-950/90 border border-amber-600 text-amber-200 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between shadow-lg">
+            <span id="safetyGateReason">SAFETY GATE: Stopping robot</span>
+            <span class="font-mono text-[11px] text-amber-300">v=0, &omega;=0</span>
+          </div>
+        </div>
+
+        <!-- Arena Legend & Quick Info -->
+        <div class="mt-2.5 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2 border-t border-slate-800 pt-2">
+          <div class="flex items-center gap-3">
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Robot</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-slate-600 inline-block"></span> Obstacles</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block"></span> Goal</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-sky-400 inline-block"></span> Ultrasonic Cone</span>
+          </div>
+          <div class="font-mono text-slate-300 text-[11px]" id="stepStats">
+            Step: 0 &bull; Dist to Goal: 4.24m &bull; Collisions: 0
+          </div>
+        </div>
+      </div>
+
+      <!-- HAND SKELETON & NORMALIZATION VISUALIZER -->
+      <div class="hud-card rounded-xl p-4 shadow-xl">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+            <span>MediaPipe 21 Landmarks & Normalization</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono font-normal">
+              42 features &bull; (p_i - p_0) / s_t
+            </span>
+          </h2>
+          <span id="handPresentBadge" class="text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
+            Hand Active
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          <!-- Hand SVG / Canvas -->
+          <div class="md:col-span-5 h-44 bg-slate-950 rounded-lg border border-slate-800 flex items-center justify-center p-2">
+            <canvas id="handCanvas" width="220" height="200" class="h-full w-auto"></canvas>
+          </div>
+
+          <!-- Normalization & Feature Telemetry -->
+          <div class="md:col-span-7 flex flex-col justify-between h-full text-xs space-y-2">
+            <div class="bg-slate-900/90 rounded p-2 border border-slate-800 space-y-1">
+              <div class="text-slate-400 font-medium flex justify-between">
+                <span>Wrist Origin (p<sub>0</sub>):</span>
+                <span id="wristPosTxt" class="font-mono text-sky-400">(0.00, 0.00)</span>
+              </div>
+              <div class="text-slate-400 font-medium flex justify-between">
+                <span>Scale Norm (s<sub>t</sub> = ||p<sub>9</sub> - p<sub>0</sub>||):</span>
+                <span id="scaleNormTxt" class="font-mono text-emerald-400">0.320</span>
+              </div>
+              <div class="text-slate-400 font-medium flex justify-between">
+                <span>Active Gesture:</span>
+                <span id="activeGestureTxt" class="font-mono font-bold text-amber-300">Idle</span>
+              </div>
+            </div>
+
+            <!-- Invariance Proof Callout -->
+            <div class="text-[11px] text-slate-400 bg-sky-950/40 border border-sky-900/60 rounded p-2">
+              <strong class="text-sky-300 font-semibold">Scale & Translation Invariance:</strong> Landmark features are strictly translated to wrist \(p_0\) and scaled by palm span \(s_t\), rendering the 1D-CNN completely invariant to camera distance.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: CONTROLS & TELEMETRY HUD (5 cols) -->
+    <div class="lg:col-span-5 flex flex-col gap-4">
+
+      <!-- TELEMETRY METERS CARD -->
+      <div class="hud-card rounded-xl p-4 shadow-xl">
+        <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 mb-3 flex items-center justify-between">
+          <span>Live Vehicle & Pipeline Telemetry</span>
+          <span id="safetyStatusPill" class="text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-medium">
+            Gate: Clear
+          </span>
+        </h2>
+
+        <!-- Meters Grid -->
+        <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+          <div class="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+            <span class="text-slate-400 block text-[11px]">Linear Velocity (v)</span>
+            <div class="text-lg font-bold font-mono text-white mt-0.5" id="meterV">0.00 m/s</div>
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1.5">
+              <div id="barV" class="bg-sky-400 h-full w-0 transition-all duration-75"></div>
+            </div>
+            <span class="text-[10px] text-slate-500 font-mono mt-1 block">Max &plusmn;0.25 m/s</span>
+          </div>
+
+          <div class="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+            <span class="text-slate-400 block text-[11px]">Angular Velocity (&omega;)</span>
+            <div class="text-lg font-bold font-mono text-white mt-0.5" id="meterOmega">0.00 rad/s</div>
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1.5">
+              <div id="barOmega" class="bg-indigo-400 h-full w-0 transition-all duration-75"></div>
+            </div>
+            <span class="text-[10px] text-slate-500 font-mono mt-1 block">Max &plusmn;1.00 rad/s</span>
+          </div>
+
+          <div class="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+            <span class="text-slate-400 block text-[11px]">Ultrasonic Range</span>
+            <div class="text-lg font-bold font-mono text-sky-400 mt-0.5" id="meterUltra">1.50 m</div>
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1.5">
+              <div id="barUltra" class="bg-sky-500 h-full w-3/4 transition-all duration-75"></div>
+            </div>
+            <span class="text-[10px] text-red-400 font-mono mt-1 block">Stop &lt; 0.20 m</span>
+          </div>
+
+          <div class="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+            <span class="text-slate-400 block text-[11px]">Wheel Speeds (v<sub>L</sub> / v<sub>R</sub>)</span>
+            <div class="text-sm font-bold font-mono text-slate-200 mt-1" id="meterWheels">
+              L: 0.00 &bull; R: 0.00
+            </div>
+            <span class="text-[10px] text-slate-500 font-mono mt-2 block">Track L = 0.20 m</span>
+          </div>
+        </div>
+
+        <!-- PROBABILITIES BARS (6 CLASSES) -->
+        <div class="border-t border-slate-800 pt-3">
+          <div class="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+            <span class="font-medium text-slate-300">EMA Probabilities (&alpha; = 0.4)</span>
+            <span class="text-[11px] text-slate-500 font-mono">Threshold: 0.80</span>
+          </div>
+          <div class="space-y-1.5" id="probBarsContainer">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- GESTURE CONTROLLER & PALM SLIDER CARD -->
+      <div class="hud-card rounded-xl p-4 shadow-xl">
+        <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300 mb-2.5 flex items-center justify-between">
+          <span>Manual Gesture Control</span>
+          <span class="text-[11px] text-slate-400 font-normal">Keyboard: W/A/S/D/Space/X</span>
+        </h2>
+
+        <!-- D-PAD GESTURE BUTTONS -->
+        <div class="grid grid-cols-3 gap-2 mb-3">
+          <div></div>
+          <button id="btnForward" class="gesture-btn py-2 px-3 rounded-lg bg-slate-800 hover:bg-sky-600 border border-slate-700 text-white font-medium text-xs flex flex-col items-center justify-center gap-0.5 transition active:scale-95">
+            <span class="text-base">&uarr;</span>
+            <span>Forward (W)</span>
+          </button>
+          <div></div>
+
+          <button id="btnLeft" class="gesture-btn py-2 px-3 rounded-lg bg-slate-800 hover:bg-sky-600 border border-slate-700 text-white font-medium text-xs flex flex-col items-center justify-center gap-0.5 transition active:scale-95">
+            <span class="text-base">&larr;</span>
+            <span>Left (A)</span>
+          </button>
+          <button id="btnStop" class="gesture-btn py-2 px-3 rounded-lg bg-red-950/80 hover:bg-red-700 border border-red-700 text-red-200 hover:text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 transition active:scale-95">
+            <span class="text-base">&block;</span>
+            <span>STOP (Space)</span>
+          </button>
+          <button id="btnRight" class="gesture-btn py-2 px-3 rounded-lg bg-slate-800 hover:bg-sky-600 border border-slate-700 text-white font-medium text-xs flex flex-col items-center justify-center gap-0.5 transition active:scale-95">
+            <span class="text-base">&rarr;</span>
+            <span>Right (D)</span>
+          </button>
+
+          <div></div>
+          <button id="btnBackward" class="gesture-btn py-2 px-3 rounded-lg bg-slate-800 hover:bg-sky-600 border border-slate-700 text-white font-medium text-xs flex flex-col items-center justify-center gap-0.5 transition active:scale-95">
+            <span class="text-base">&darr;</span>
+            <span>Backward (S)</span>
+          </button>
+          <button id="btnIdle" class="gesture-btn py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium text-xs flex flex-col items-center justify-center gap-0.5 transition active:scale-95">
+            <span class="text-base">&sim;</span>
+            <span>Idle (X)</span>
+          </button>
+        </div>
+
+        <!-- PALM SIZE SLIDER (PROPORTIONAL SPEED) -->
+        <div class="border-t border-slate-800 pt-3">
+          <div class="flex items-center justify-between text-xs mb-1">
+            <label for="palmSlider" class="text-slate-300 font-medium">Palm Size (Proportional Speed Control):</label>
+            <span id="palmValueTxt" class="font-mono text-sky-400 font-semibold">0.20 (v = 0.14 m/s)</span>
+          </div>
+          <input id="palmSlider" type="range" min="0.08" max="0.30" step="0.01" value="0.20"
+                 class="w-full accent-sky-400 bg-slate-800 rounded-lg h-2 cursor-pointer">
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
+            <span>s_min = 0.08 (&gamma; = 0.20)</span>
+            <span>s_max = 0.30 (v_max = 0.25 m/s)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PIPELINE ABLATION & AUTOPILOT CARD -->
+      <div class="hud-card rounded-xl p-4 shadow-xl space-y-3">
+        <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-300">
+          Pipeline Mode & Safety Watchdog
+        </h2>
+
+        <!-- Mode Radio Grid -->
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <label class="flex items-center gap-2 p-2 rounded bg-slate-900/90 border border-slate-800 cursor-pointer hover:border-slate-700">
+            <input type="radio" name="pipelineMode" value="full" checked class="accent-sky-400">
+            <span class="font-medium text-slate-200">Full LCGC (Safe)</span>
+          </label>
+          <label class="flex items-center gap-2 p-2 rounded bg-slate-900/90 border border-slate-800 cursor-pointer hover:border-slate-700">
+            <input type="radio" name="pipelineMode" value="ema_hysteresis" class="accent-sky-400">
+            <span class="font-medium text-slate-200">EMA + Hysteresis</span>
+          </label>
+          <label class="flex items-center gap-2 p-2 rounded bg-slate-900/90 border border-slate-800 cursor-pointer hover:border-slate-700">
+            <input type="radio" name="pipelineMode" value="ema" class="accent-sky-400">
+            <span class="font-medium text-slate-200">EMA Only</span>
+          </label>
+          <label class="flex items-center gap-2 p-2 rounded bg-slate-900/90 border border-slate-800 cursor-pointer hover:border-slate-700">
+            <input type="radio" name="pipelineMode" value="raw" class="accent-sky-400">
+            <span class="font-medium text-slate-200">Raw Argmax</span>
+          </label>
+        </div>
+
+        <!-- Autopilot & Safety Watchdog Testing -->
+        <div class="border-t border-slate-800 pt-3 flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <button id="btnAutopilot" class="flex-1 py-1.5 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs transition shadow">
+              🚀 Start Autonomous Operator
+            </button>
+            <select id="selOperatorStyle" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-sky-500">
+              <option value="cautious">Cautious Operator</option>
+              <option value="aggressive">Aggressive Operator</option>
+              <option value="novice">Novice Operator</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2 pt-1">
+            <button id="btnToggleHand" class="flex-1 py-1.5 px-3 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium transition">
+              ✋ Toggle Hand Presence (Watchdog >0.5s)
+            </button>
+            <button id="btnSpawnObstacle" class="py-1.5 px-3 rounded bg-amber-950 hover:bg-amber-900 border border-amber-800 text-amber-200 text-xs font-medium transition">
+              ⚡ Sudden Obstacle
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- EMBEDDED REAL-TIME ENGINE JAVASCRIPT -->
+  <script>
+    // ══════════════════════════════════════════════════════════════════════════
+    // 1. CONFIGURATION & MATHEMATICAL CONSTANTS
+    // ══════════════════════════════════════════════════════════════════════════
+    const CONFIG = {
+      FPS: 30,
+      DT: 1.0 / 30.0,
+      CLASSES: ["Idle", "Stop", "Forward", "Backward", "Left", "Right"],
+      V_MAX: 0.25,
+      OMEGA_MAX: 1.0,
+      WHEEL_SEPARATION_L: 0.20,
+      ROBOT_RADIUS: 0.10,
+      ULTRASONIC_STOP_DIST: 0.20,
+      ULTRASONIC_MAX_RANGE: 2.0,
+      HAND_LOST_TIMEOUT: 0.5,
+      ALPHA_EMA: 0.4,
+      PROB_THRESHOLD: 0.80,
+      M_HYSTERESIS: 3,
+      M_STOP: 1,
+      GAMMA_SPEED: 0.2,
+      S_MIN: 0.08,
+      S_MAX: 0.30,
+      ARENA_WIDTH: 4.0,
+      ARENA_HEIGHT: 4.0,
+      DEFAULT_START: [0.5, 0.5],
+      DEFAULT_GOAL: [3.5, 3.5],
+      OBSTACLES: [
+        { x: 1.5, y: 1.5, w: 0.5, h: 0.5 },
+        { x: 2.5, y: 2.8, w: 0.4, h: 0.6 },
+        { x: 1.0, y: 3.0, w: 0.6, h: 0.4 },
+        { x: 3.0, y: 1.2, w: 0.5, h: 0.5 }
+      ]
+    };
+
+    // Canonical MediaPipe 21 Hand Landmarks
+    const CANONICAL_HAND = [
+      [0.00,  0.00],
+      [0.10,  0.03], [0.18,  0.10], [0.24,  0.18], [0.28,  0.26], // Thumb
+      [0.07,  0.30], [0.08,  0.42], [0.09,  0.52], [0.09,  0.60], // Index
+      [0.00,  0.32], [0.00,  0.45], [0.00,  0.56], [0.00,  0.65], // Middle
+      [-0.07, 0.30], [-0.08, 0.42], [-0.08, 0.51], [-0.08, 0.58], // Ring
+      [-0.14, 0.27], [-0.16, 0.36], [-0.17, 0.43], [-0.17, 0.49]  // Pinky
+    ];
+
+    const HAND_BONES = [
+      [0, 1], [1, 2], [2, 3], [3, 4],
+      [0, 5], [5, 6], [6, 7], [7, 8],
+      [0, 9], [9, 10], [10, 11], [11, 12],
+      [0, 13], [13, 14], [14, 15], [15, 16],
+      [0, 17], [17, 18], [18, 19], [19, 20],
+      [5, 9], [9, 13], [13, 17]
+    ];
+
+    function cloneHand(h) { return h.map(pt => [pt[0], pt[1]]); }
+
+    function curlFinger(baseIdx, hand, amount) {
+      const h = cloneHand(hand);
+      const base = h[baseIdx];
+      for (let j = 1; j <= 3; j++) {
+        const idx = baseIdx + j;
+        const vx = h[idx][0] - base[0];
+        const vy = h[idx][1] - base[1];
+        const angle = -amount * Math.PI * 0.45 * (j / 3.0);
+        const cosA = Math.cos(angle), sinA = Math.sin(angle);
+        const scale = 1.0 - 0.25 * amount;
+        h[idx][0] = base[0] + (vx * cosA - vy * sinA) * scale;
+        h[idx][1] = base[1] + (vx * sinA + vy * cosA) * scale;
+      }
+      return h;
+    }
+
+    function buildGestures() {
+      // 1. Idle
+      let idle = cloneHand(CANONICAL_HAND);
+      for (let b of [5, 9, 13, 17]) idle = curlFinger(b, idle, 0.45);
+      idle = curlFinger(1, idle, 0.30);
+
+      // 2. Stop
+      const stop = cloneHand(CANONICAL_HAND);
+
+      // 3. Forward
+      let forward = cloneHand(CANONICAL_HAND);
+      for (let b of [9, 13, 17]) forward = curlFinger(b, forward, 0.85);
+      forward = curlFinger(1, forward, 0.70);
+
+      // 4. Backward
+      let backward = cloneHand(forward);
+      const my = backward[5][1];
+      for (let j = 6; j <= 8; j++) backward[j][1] = my - (backward[j][1] - my);
+
+      // 5. Left
+      let left = cloneHand(forward);
+      for (let j = 5; j <= 8; j++) {
+        const vx = left[j][0] - left[0][0];
+        const vy = left[j][1] - left[0][1];
+        left[j][0] = left[0][0] - vy;
+        left[j][1] = left[0][1] + vx;
+      }
+
+      // 6. Right
+      let right = cloneHand(forward);
+      for (let j = 5; j <= 8; j++) {
+        const vx = right[j][0] - right[0][0];
+        const vy = right[j][1] - right[0][1];
+        right[j][0] = right[0][0] + vy;
+        right[j][1] = right[0][1] - vx;
+      }
+
+      return { Idle: idle, Stop: stop, Forward: forward, Backward: backward, Left: left, Right: right };
+    }
+
+    const GESTURE_POSES = buildGestures();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 2. ONLINE SIMULATION STATE & KINEMATICS
+    // ══════════════════════════════════════════════════════════════════════════
+    class OnlineSimulation {
+      constructor() {
+        this.reset();
+        this.pipelineMode = "full"; // 'raw', 'ema', 'ema_hysteresis', 'full'
+        this.selectedGesture = "Idle";
+        this.palmSize = 0.20;
+        this.handPresent = true;
+        this.isPaused = false;
+        this.autopilot = false;
+        this.operatorStyle = "cautious";
+
+        // Sliding window & pipeline state
+        this.windowBuffer = [];
+        this.smoothedProbs = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
+        this.hysteresisCandidate = null;
+        this.hysteresisCount = 0;
+        this.currentClassifiedGesture = "Stop";
+        this.timeSinceHand = 0.0;
+        this.safetyTriggered = false;
+        this.safetyReason = "Normal";
+
+        // Operator waypoints
+        this.waypoints = [
+          { x: 1.5, y: 0.7 },
+          { x: 3.0, y: 2.0 },
+          { x: 3.5, y: 3.5 }
+        ];
+        this.currentWaypointIdx = 0;
+      }
+
+      reset() {
+        this.robot = {
+          x: CONFIG.DEFAULT_START[0],
+          y: CONFIG.DEFAULT_START[1],
+          theta: 0.0,
+          v: 0.0,
+          omega: 0.0,
+          v_l: 0.0,
+          v_r: 0.0,
+          ultrasonic_dist: 1.5
+        };
+        this.stepCount = 0;
+        this.collisions = 0;
+        this.trajectory = [[this.robot.x, this.robot.y]];
+        this.currentClassifiedGesture = "Stop";
+        this.smoothedProbs = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
+        this.rawProbs = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
+        this.currentLandmarks = cloneHand(GESTURE_POSES["Idle"]);
+        this.timeSinceHand = 0.0;
+        this.currentWaypointIdx = 0;
+      }
+
+      // Ray casting for ultrasonic sensor
+      castUltrasonicRay() {
+        const ox = this.robot.x;
+        const oy = this.robot.y;
+        const dx = Math.cos(this.robot.theta);
+        const dy = Math.sin(this.robot.theta);
+        let minT = CONFIG.ULTRASONIC_MAX_RANGE;
+
+        // Arena boundary walls
+        const walls = [
+          [[0, 0], [CONFIG.ARENA_WIDTH, 0]],
+          [[CONFIG.ARENA_WIDTH, 0], [CONFIG.ARENA_WIDTH, CONFIG.ARENA_HEIGHT]],
+          [[CONFIG.ARENA_WIDTH, CONFIG.ARENA_HEIGHT], [0, CONFIG.ARENA_HEIGHT]],
+          [[0, CONFIG.ARENA_HEIGHT], [0, 0]]
+        ];
+
+        for (const [A, B] of walls) {
+          const t = this.intersectRaySegment(ox, oy, dx, dy, A[0], A[1], B[0], B[1]);
+          if (t !== null && t < minT) minT = t;
+        }
+
+        // Obstacles
+        for (const obs of CONFIG.OBSTACLES) {
+          const hw = obs.w / 2.0, hh = obs.h / 2.0;
+          const xmin = obs.x - hw, ymin = obs.y - hh;
+          const xmax = obs.x + hw, ymax = obs.y + hh;
+          const segs = [
+            [[xmin, ymin], [xmax, ymin]],
+            [[xmax, ymin], [xmax, ymax]],
+            [[xmax, ymax], [xmin, ymax]],
+            [[xmin, ymax], [xmin, ymin]]
+          ];
+          for (const [A, B] of segs) {
+            const t = this.intersectRaySegment(ox, oy, dx, dy, A[0], A[1], B[0], B[1]);
+            if (t !== null && t < minT) minT = t;
+          }
+        }
+
+        // Add small Gaussian sensor noise
+        const noise = (Math.random() - 0.5) * 0.02;
+        return Math.max(0.01, minT + noise);
+      }
+
+      intersectRaySegment(ox, oy, dx, dy, ax, ay, bx, by) {
+        const sx = bx - ax;
+        const sy = by - ay;
+        const denom = dx * sy - dy * sx;
+        if (Math.abs(denom) < 1e-9) return null;
+        const t = ((ax - ox) * sy - (ay - oy) * sx) / denom;
+        const u = ((ax - ox) * dy - (ay - oy) * dx) / denom;
+        if (t >= 0.0 && u >= 0.0 && u <= 1.0) return t;
+        return null;
+      }
+
+      checkCollision(x, y, r) {
+        if (x - r < 0 || x + r > CONFIG.ARENA_WIDTH || y - r < 0 || y + r > CONFIG.ARENA_HEIGHT) {
+          return true;
+        }
+        for (const obs of CONFIG.OBSTACLES) {
+          const hw = obs.w / 2.0, hh = obs.h / 2.0;
+          const cx = Math.max(obs.x - hw, Math.min(x, obs.x + hw));
+          const cy = Math.max(obs.y - hh, Math.min(y, obs.y + hh));
+          const distSq = (x - cx) ** 2 + (y - cy) ** 2;
+          if (distSq <= r * r) return true;
+        }
+        return false;
+      }
+
+      // Autonomous Operator Logic
+      stepAutopilot() {
+        if (this.currentWaypointIdx >= this.waypoints.length) {
+          return { gesture: "Stop", palm: 0.20 };
+        }
+        const target = this.waypoints[this.currentWaypointIdx];
+        const dx = target.x - this.robot.x;
+        const dy = target.y - this.robot.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < 0.25) {
+          this.currentWaypointIdx++;
+          if (this.currentWaypointIdx >= this.waypoints.length) {
+            return { gesture: "Stop", palm: 0.20 };
+          }
+        }
+
+        const desiredHeading = Math.atan2(dy, dx);
+        let headingErr = desiredHeading - this.robot.theta;
+        while (headingErr > Math.PI) headingErr -= 2 * Math.PI;
+        while (headingErr < -Math.PI) headingErr += 2 * Math.PI;
+
+        // Operator style perturbation
+        if (this.operatorStyle === "novice" && Math.random() < 0.05) {
+          return { gesture: "Idle", palm: 0.15 };
+        }
+
+        if (Math.abs(headingErr) > 0.25) {
+          return { gesture: headingErr > 0 ? "Left" : "Right", palm: 0.22 };
+        } else {
+          return { gesture: "Forward", palm: 0.25 };
+        }
+      }
+
+      // Step pipeline & robot physics
+      update() {
+        if (this.isPaused) return;
+        this.stepCount++;
+        const dt = CONFIG.DT;
+
+        // 1. Ultrasonic sensor measurement
+        this.robot.ultrasonic_dist = this.castUltrasonicRay();
+
+        // 2. Gesture input & synthetic landmarks
+        let activeGesture = this.selectedGesture;
+        let activePalm = this.palmSize;
+
+        if (this.autopilot) {
+          const autoRes = this.stepAutopilot();
+          activeGesture = autoRes.gesture;
+          activePalm = autoRes.palm;
+          this.selectedGesture = activeGesture;
+        }
+
+        if (this.handPresent) {
+          this.timeSinceHand = 0.0;
+          const basePose = GESTURE_POSES[activeGesture] || GESTURE_POSES["Idle"];
+          // Add micro jitter
+          const lm = cloneHand(basePose);
+          for (let i = 0; i < 21; i++) {
+            lm[i][0] += (Math.random() - 0.5) * 0.015;
+            lm[i][1] += (Math.random() - 0.5) * 0.015;
+          }
+          this.currentLandmarks = lm;
+        } else {
+          this.timeSinceHand += dt;
+          this.currentLandmarks = null;
+        }
+
+        // 3. 1D-CNN Inference emulation (reproducing INT8 model behavior)
+        const classIdx = CONFIG.CLASSES.indexOf(activeGesture);
+        const rawProbs = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01];
+        if (this.handPresent && classIdx !== -1) {
+          // Sharp distribution matching trained B3 accuracy (>99%)
+          rawProbs[classIdx] = 0.95;
+          const remainder = 0.05 / 5.0;
+          for (let k = 0; k < 6; k++) {
+            if (k !== classIdx) rawProbs[k] = remainder;
+          }
+        } else {
+          // Uniform / lost
+          for (let k = 0; k < 6; k++) rawProbs[k] = 1.0 / 6.0;
+        }
+        this.rawProbs = rawProbs;
+
+        // 4. Probability EMA Smoothing
+        for (let k = 0; k < 6; k++) {
+          this.smoothedProbs[k] = CONFIG.ALPHA_EMA * rawProbs[k] + (1.0 - CONFIG.ALPHA_EMA) * this.smoothedProbs[k];
+        }
+
+        // 5. Gesture Classification & Hysteresis
+        let decidedGesture = "Stop";
+        if (this.pipelineMode === "raw") {
+          const maxIdx = rawProbs.indexOf(Math.max(...rawProbs));
+          decidedGesture = CONFIG.CLASSES[maxIdx];
+        } else if (this.pipelineMode === "ema") {
+          const maxIdx = this.smoothedProbs.indexOf(Math.max(...this.smoothedProbs));
+          const maxP = this.smoothedProbs[maxIdx];
+          decidedGesture = (maxP >= CONFIG.PROB_THRESHOLD) ? CONFIG.CLASSES[maxIdx] : "Stop";
+        } else { // 'ema_hysteresis' or 'full'
+          const maxIdx = this.smoothedProbs.indexOf(Math.max(...this.smoothedProbs));
+          const maxP = this.smoothedProbs[maxIdx];
+          const topClass = CONFIG.CLASSES[maxIdx];
+
+          if (topClass === this.hysteresisCandidate) {
+            this.hysteresisCount++;
+          } else {
+            this.hysteresisCandidate = topClass;
+            this.hysteresisCount = 1;
+          }
+
+          const reqFrames = (topClass === "Stop") ? CONFIG.M_STOP : CONFIG.M_HYSTERESIS;
+          if (maxP >= CONFIG.PROB_THRESHOLD && this.hysteresisCount >= reqFrames) {
+            this.currentClassifiedGesture = topClass;
+          } else if (maxP < CONFIG.PROB_THRESHOLD) {
+            this.currentClassifiedGesture = "Stop";
+          }
+          decidedGesture = this.currentClassifiedGesture;
+        }
+
+        // 6. Proportional Velocity Command Mapping
+        let v = 0.0, omega = 0.0;
+        const normPalm = Math.min(1.0, Math.max(CONFIG.GAMMA_SPEED, (activePalm - CONFIG.S_MIN) / (CONFIG.S_MAX - CONFIG.S_MIN)));
+        const scaledV = CONFIG.V_MAX * normPalm;
+
+        switch (decidedGesture) {
+          case "Forward": v = scaledV; omega = 0.0; break;
+          case "Backward": v = -scaledV; omega = 0.0; break;
+          case "Left": v = 0.0; omega = CONFIG.OMEGA_MAX; break;
+          case "Right": v = 0.0; omega = -CONFIG.OMEGA_MAX; break;
+          case "Stop":
+          case "Idle":
+          default:
+            v = 0.0; omega = 0.0; break;
+        }
+
+        // 7. Safety Gate (Watchdog + Ultrasonic)
+        this.safetyTriggered = false;
+        this.safetyReason = "Nominal";
+
+        if (this.pipelineMode === "full") {
+          if (this.robot.ultrasonic_dist < CONFIG.ULTRASONIC_STOP_DIST) {
+            v = 0.0; omega = 0.0;
+            this.safetyTriggered = true;
+            this.safetyReason = `Ultrasonic Stop (< ${(CONFIG.ULTRASONIC_STOP_DIST*100).toFixed(0)}cm)`;
+          } else if (this.timeSinceHand > CONFIG.HAND_LOST_TIMEOUT) {
+            v = 0.0; omega = 0.0;
+            this.safetyTriggered = true;
+            this.safetyReason = `Hand Lost Watchdog (> ${CONFIG.HAND_LOST_TIMEOUT}s)`;
+          }
+        }
+
+        this.robot.v = v;
+        this.robot.omega = omega;
+        this.robot.v_l = v - omega * CONFIG.WHEEL_SEPARATION_L / 2.0;
+        this.robot.v_r = v + omega * CONFIG.WHEEL_SEPARATION_L / 2.0;
+
+        // 8. Kinematics motion integration
+        const nextX = this.robot.x + v * Math.cos(this.robot.theta) * dt;
+        const nextY = this.robot.y + v * Math.sin(this.robot.theta) * dt;
+        this.robot.theta += omega * dt;
+
+        // Collision check
+        if (this.checkCollision(nextX, nextY, CONFIG.ROBOT_RADIUS)) {
+          this.collisions++;
+          document.getElementById("collisionAlert").classList.remove("hidden");
+          setTimeout(() => { document.getElementById("collisionAlert").classList.add("hidden"); }, 300);
+        } else {
+          this.robot.x = nextX;
+          this.robot.y = nextY;
+        }
+
+        this.trajectory.push([this.robot.x, this.robot.y]);
+        if (this.trajectory.length > 300) this.trajectory.shift();
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 3. UI RENDERING & VISUALIZERS
+    // ══════════════════════════════════════════════════════════════════════════
+    const sim = new OnlineSimulation();
+    const arenaCanvas = document.getElementById("arenaCanvas");
+    const arenaCtx = arenaCanvas.getContext("2d");
+    const handCanvas = document.getElementById("handCanvas");
+    const handCtx = handCanvas.getContext("2d");
+
+    // Initialize Probability Bars
+    const probContainer = document.getElementById("probBarsContainer");
+    CONFIG.CLASSES.forEach((cls, idx) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center gap-2 text-[11px]";
+      row.innerHTML = `
+        <span class="w-14 font-mono text-slate-400">${cls}</span>
+        <div class="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden relative">
+          <div id="probBar_${cls}" class="bg-sky-400 h-full w-0 transition-all duration-75"></div>
+          <div class="absolute inset-y-0 left-[80%] w-0.5 bg-red-500/70"></div>
+        </div>
+        <span id="probVal_${cls}" class="w-10 text-right font-mono text-slate-300">0.00</span>
+      `;
+      probContainer.appendChild(row);
+    });
+
+    function renderArena() {
+      const w = arenaCanvas.width;
+      const h = arenaCanvas.height;
+      const scale = w / CONFIG.ARENA_WIDTH; // 150 px/m
+
+      arenaCtx.clearRect(0, 0, w, h);
+
+      // 1. Grid
+      arenaCtx.strokeStyle = "#1e293b";
+      arenaCtx.lineWidth = 1;
+      for (let m = 0; m <= CONFIG.ARENA_WIDTH; m += 0.5) {
+        arenaCtx.beginPath();
+        arenaCtx.moveTo(m * scale, 0);
+        arenaCtx.lineTo(m * scale, h);
+        arenaCtx.stroke();
+
+        arenaCtx.beginPath();
+        arenaCtx.moveTo(0, m * scale);
+        arenaCtx.lineTo(w, m * scale);
+        arenaCtx.stroke();
+      }
+
+      // 2. Obstacles
+      CONFIG.OBSTACLES.forEach(obs => {
+        const x = (obs.x - obs.w / 2.0) * scale;
+        const y = h - (obs.y + obs.h / 2.0) * scale;
+        const ow = obs.w * scale;
+        const oh = obs.h * scale;
+
+        arenaCtx.fillStyle = "#334155";
+        arenaCtx.strokeStyle = "#64748b";
+        arenaCtx.lineWidth = 2;
+        arenaCtx.fillRect(x, y, ow, oh);
+        arenaCtx.strokeRect(x, y, ow, oh);
+      });
+
+      // 3. Goal
+      const gx = CONFIG.DEFAULT_GOAL[0] * scale;
+      const gy = h - CONFIG.DEFAULT_GOAL[1] * scale;
+      arenaCtx.fillStyle = "#eab308";
+      arenaCtx.beginPath();
+      arenaCtx.arc(gx, gy, 12, 0, 2 * Math.PI);
+      arenaCtx.fill();
+      arenaCtx.strokeStyle = "#fef08a";
+      arenaCtx.lineWidth = 2;
+      arenaCtx.stroke();
+
+      // 4. Trajectory Trail
+      if (sim.trajectory.length > 1) {
+        arenaCtx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+        arenaCtx.lineWidth = 2;
+        arenaCtx.beginPath();
+        sim.trajectory.forEach((pt, i) => {
+          const px = pt[0] * scale;
+          const py = h - pt[1] * scale;
+          if (i === 0) arenaCtx.moveTo(px, py);
+          else arenaCtx.lineTo(px, py);
+        });
+        arenaCtx.stroke();
+      }
+
+      // 5. Robot Chassis
+      const rx = sim.robot.x * scale;
+      const ry = h - sim.robot.y * scale;
+      const rRad = CONFIG.ROBOT_RADIUS * scale;
+
+      // Ultrasonic Cone & Ray
+      const beamDist = Math.min(sim.robot.ultrasonic_dist, CONFIG.ULTRASONIC_MAX_RANGE) * scale;
+      const bx = rx + beamDist * Math.cos(sim.robot.theta);
+      const by = ry - beamDist * Math.sin(sim.robot.theta);
+
+      const isAlert = sim.robot.ultrasonic_dist < CONFIG.ULTRASONIC_STOP_DIST;
+      arenaCtx.strokeStyle = isAlert ? "#ef4444" : "rgba(56, 189, 248, 0.6)";
+      arenaCtx.lineWidth = isAlert ? 2.5 : 1.5;
+      arenaCtx.setLineDash([4, 4]);
+      arenaCtx.beginPath();
+      arenaCtx.moveTo(rx, ry);
+      arenaCtx.lineTo(bx, by);
+      arenaCtx.stroke();
+      arenaCtx.setLineDash([]);
+
+      // Beam endpoint
+      arenaCtx.fillStyle = isAlert ? "#ef4444" : "#38bdf8";
+      arenaCtx.beginPath();
+      arenaCtx.arc(bx, by, 3, 0, 2 * Math.PI);
+      arenaCtx.fill();
+
+      // Robot Body Circle
+      arenaCtx.fillStyle = isAlert ? "#ef4444" : (sim.robot.v !== 0 || sim.robot.omega !== 0 ? "#22c55e" : "#0284c7");
+      arenaCtx.beginPath();
+      arenaCtx.arc(rx, ry, rRad, 0, 2 * Math.PI);
+      arenaCtx.fill();
+      arenaCtx.strokeStyle = "#ffffff";
+      arenaCtx.lineWidth = 2;
+      arenaCtx.stroke();
+
+      // Heading Arrow
+      const hx = rx + (rRad + 8) * Math.cos(sim.robot.theta);
+      const hy = ry - (rRad + 8) * Math.sin(sim.robot.theta);
+      arenaCtx.strokeStyle = "#ffffff";
+      arenaCtx.lineWidth = 3;
+      arenaCtx.beginPath();
+      arenaCtx.moveTo(rx, ry);
+      arenaCtx.lineTo(hx, hy);
+      arenaCtx.stroke();
+    }
+
+    function renderHand() {
+      const w = handCanvas.width;
+      const h = handCanvas.height;
+      handCtx.clearRect(0, 0, w, h);
+
+      if (!sim.currentLandmarks) {
+        handCtx.fillStyle = "#ef4444";
+        handCtx.font = "bold 11px sans-serif";
+        handCtx.textAlign = "center";
+        handCtx.fillText("HAND NOT DETECTED", w / 2, h / 2 - 6);
+        handCtx.fillStyle = "#94a3b8";
+        handCtx.font = "10px sans-serif";
+        handCtx.fillText("Watchdog >0.5s active", w / 2, h / 2 + 10);
+        return;
+      }
+
+      const ox = w / 2;
+      const oy = h * 0.85;
+      const scale = 220; // px/unit
+
+      // Draw bones
+      handCtx.strokeStyle = "#38bdf8";
+      handCtx.lineWidth = 2.5;
+      HAND_BONES.forEach(([u, v]) => {
+        const p1 = sim.currentLandmarks[u];
+        const p2 = sim.currentLandmarks[v];
+        handCtx.beginPath();
+        handCtx.moveTo(ox + p1[0] * scale, oy - p1[1] * scale);
+        handCtx.lineTo(ox + p2[0] * scale, oy - p2[1] * scale);
+        handCtx.stroke();
+      });
+
+      // Draw landmark dots
+      sim.currentLandmarks.forEach((pt, i) => {
+        const px = ox + pt[0] * scale;
+        const py = oy - pt[1] * scale;
+        handCtx.fillStyle = (i === 0) ? "#fbbf24" : (i === 9 ? "#34d399" : "#f43f5e");
+        handCtx.beginPath();
+        handCtx.arc(px, py, (i === 0 || i === 9) ? 4.5 : 2.5, 0, 2 * Math.PI);
+        handCtx.fill();
+      });
+    }
+
+    function updateTelemetryHUD() {
+      // Pose & Stats
+      document.getElementById("robotPoseDisplay").innerText = 
+        `x: ${sim.robot.x.toFixed(2)}m | y: ${sim.robot.y.toFixed(2)}m | θ: ${(sim.robot.theta * 180 / Math.PI).toFixed(0)}°`;
+      
+      const goalDist = Math.hypot(sim.robot.x - CONFIG.DEFAULT_GOAL[0], sim.robot.y - CONFIG.DEFAULT_GOAL[1]);
+      document.getElementById("stepStats").innerText = 
+        `Step: ${sim.stepCount} • Dist to Goal: ${goalDist.toFixed(2)}m • Collisions: ${sim.collisions}`;
+      document.getElementById("collisionCountText").innerText = `Collisions: ${sim.collisions}`;
+
+      // Vehicle Meters
+      document.getElementById("meterV").innerText = `${sim.robot.v.toFixed(2)} m/s`;
+      document.getElementById("barV").style.width = `${Math.min(100, Math.abs(sim.robot.v) / CONFIG.V_MAX * 100)}%`;
+      
+      document.getElementById("meterOmega").innerText = `${sim.robot.omega.toFixed(2)} rad/s`;
+      document.getElementById("barOmega").style.width = `${Math.min(100, Math.abs(sim.robot.omega) / CONFIG.OMEGA_MAX * 100)}%`;
+
+      document.getElementById("meterUltra").innerText = `${sim.robot.ultrasonic_dist.toFixed(2)} m`;
+      document.getElementById("barUltra").style.width = `${Math.min(100, sim.robot.ultrasonic_dist / CONFIG.ULTRASONIC_MAX_RANGE * 100)}%`;
+      if (sim.robot.ultrasonic_dist < CONFIG.ULTRASONIC_STOP_DIST) {
+        document.getElementById("meterUltra").className = "text-lg font-bold font-mono text-red-500 mt-0.5";
+      } else {
+        document.getElementById("meterUltra").className = "text-lg font-bold font-mono text-sky-400 mt-0.5";
+      }
+
+      document.getElementById("meterWheels").innerText = 
+        `L: ${sim.robot.v_l.toFixed(2)} • R: ${sim.robot.v_r.toFixed(2)} m/s`;
+
+      // Safety Gate status
+      const safetyPill = document.getElementById("safetyStatusPill");
+      const safetyBanner = document.getElementById("safetyGateAlert");
+      if (sim.safetyTriggered) {
+        safetyPill.className = "text-xs px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 font-bold";
+        safetyPill.innerText = "Gate: ENGAGED";
+        safetyBanner.classList.remove("hidden");
+        document.getElementById("safetyGateReason").innerText = `SAFETY GATE: ${sim.safetyReason}`;
+      } else {
+        safetyPill.className = "text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-medium";
+        safetyPill.innerText = "Gate: CLEAR";
+        safetyBanner.classList.add("hidden");
+      }
+
+      // Hand Card Info
+      document.getElementById("handPresentBadge").innerText = sim.handPresent ? "Hand Active" : "No Hand (Lost)";
+      document.getElementById("handPresentBadge").className = sim.handPresent ? 
+        "text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800" :
+        "text-xs px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 font-bold";
+
+      document.getElementById("activeGestureTxt").innerText = sim.currentClassifiedGesture;
+
+      // Probabilities Bars
+      CONFIG.CLASSES.forEach((cls, idx) => {
+        const p = sim.smoothedProbs[idx];
+        const bar = document.getElementById(`probBar_${cls}`);
+        const val = document.getElementById(`probVal_${cls}`);
+        if (bar && val) {
+          bar.style.width = `${Math.min(100, p * 100)}%`;
+          bar.className = (cls === sim.currentClassifiedGesture) ? 
+            "bg-emerald-400 h-full transition-all duration-75" : "bg-sky-400 h-full transition-all duration-75";
+          val.innerText = p.toFixed(2);
+        }
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 4. MAIN LOOP & EVENT BINDINGS
+    // ══════════════════════════════════════════════════════════════════════════
+    function mainLoop() {
+      sim.update();
+      renderArena();
+      renderHand();
+      updateTelemetryHUD();
+      requestAnimationFrame(mainLoop);
+    }
+    requestAnimationFrame(mainLoop);
+
+    // Gesture button bindings
+    function selectGesture(g) {
+      sim.autopilot = false;
+      document.getElementById("btnAutopilot").innerText = "🚀 Start Autonomous Operator";
+      document.getElementById("btnAutopilot").className = "flex-1 py-1.5 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs transition shadow";
+      sim.selectedGesture = g;
+      document.querySelectorAll(".gesture-btn").forEach(b => b.classList.remove("ring-2", "ring-sky-400"));
+      const btnMap = { Forward: "btnForward", Backward: "btnBackward", Left: "btnLeft", Right: "btnRight", Stop: "btnStop", Idle: "btnIdle" };
+      if (btnMap[g]) document.getElementById(btnMap[g]).classList.add("ring-2", "ring-sky-400");
+    }
+
+    document.getElementById("btnForward").onclick = () => selectGesture("Forward");
+    document.getElementById("btnBackward").onclick = () => selectGesture("Backward");
+    document.getElementById("btnLeft").onclick = () => selectGesture("Left");
+    document.getElementById("btnRight").onclick = () => selectGesture("Right");
+    document.getElementById("btnStop").onclick = () => selectGesture("Stop");
+    document.getElementById("btnIdle").onclick = () => selectGesture("Idle");
+
+    // Keyboard Shortcuts
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "w" || e.key === "W" || e.key === "ArrowUp") selectGesture("Forward");
+      else if (e.key === "s" || e.key === "S" || e.key === "ArrowDown") selectGesture("Backward");
+      else if (e.key === "a" || e.key === "A" || e.key === "ArrowLeft") selectGesture("Left");
+      else if (e.key === "d" || e.key === "D" || e.key === "ArrowRight") selectGesture("Right");
+      else if (e.key === " " || e.key === "Escape") selectGesture("Stop");
+      else if (e.key === "x" || e.key === "X") selectGesture("Idle");
+      else if (e.key === "p" || e.key === "P") document.getElementById("btnPause").click();
+      else if (e.key === "r" || e.key === "R") document.getElementById("btnReset").click();
+    });
+
+    // Palm slider
+    const palmSlider = document.getElementById("palmSlider");
+    palmSlider.oninput = (e) => {
+      const val = parseFloat(e.target.value);
+      sim.palmSize = val;
+      const normPalm = Math.min(1.0, Math.max(CONFIG.GAMMA_SPEED, (val - CONFIG.S_MIN) / (CONFIG.S_MAX - CONFIG.S_MIN)));
+      const v = CONFIG.V_MAX * normPalm;
+      document.getElementById("palmValueTxt").innerText = `${val.toFixed(2)} (v = ${v.toFixed(2)} m/s)`;
+    };
+
+    // Pipeline mode radio buttons
+    document.querySelectorAll("input[name='pipelineMode']").forEach(r => {
+      r.onchange = (e) => { sim.pipelineMode = e.target.value; };
+    });
+
+    // Autopilot button
+    const btnAuto = document.getElementById("btnAutopilot");
+    btnAuto.onclick = () => {
+      sim.autopilot = !sim.autopilot;
+      btnAuto.innerText = sim.autopilot ? "⏹ Stop Autonomous Operator" : "🚀 Start Autonomous Operator";
+      btnAuto.className = sim.autopilot ? 
+        "flex-1 py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium text-xs transition shadow" :
+        "flex-1 py-1.5 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs transition shadow";
+    };
+
+    document.getElementById("selOperatorStyle").onchange = (e) => {
+      sim.operatorStyle = e.target.value;
+    };
+
+    // Toggle Hand presence
+    document.getElementById("btnToggleHand").onclick = () => {
+      sim.handPresent = !sim.handPresent;
+    };
+
+    // Spawn sudden obstacle
+    document.getElementById("btnSpawnObstacle").onclick = () => {
+      const r = sim.robot;
+      const suddenX = r.x + 0.35 * Math.cos(r.theta);
+      const suddenY = r.y + 0.35 * Math.sin(r.theta);
+      CONFIG.OBSTACLES.push({ x: suddenX, y: suddenY, w: 0.35, h: 0.35 });
+      setTimeout(() => { CONFIG.OBSTACLES.pop(); }, 4000);
+    };
+
+    // Reset & Pause
+    document.getElementById("btnReset").onclick = () => { sim.reset(); };
+    document.getElementById("btnPause").onclick = () => {
+      sim.isPaused = !sim.isPaused;
+      document.getElementById("btnPause").innerText = sim.isPaused ? "▶ Resume" : "⏸ Pause";
+    };
+
+  </script>
+</body>
+</html>
